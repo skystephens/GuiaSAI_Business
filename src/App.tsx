@@ -31,7 +31,7 @@ function App() {
   const [taxiDirection, setTaxiDirection] = useState<'airport-to-zone' | 'zone-to-airport'>('airport-to-zone')
   
   // 🆕 Indicador de muchas maletas
-  const [hasLuggage, setHasLuggage] = useState(false)
+  const [hasLuggage] = useState(false)
   
   // 🆕 Filtros globales - Alojamientos
   const [filterCheckIn, setFilterCheckIn] = useState<string>('')
@@ -114,7 +114,7 @@ function App() {
     alert('Cerrando sesión...')
   }
 
-  const handleLoginAgency = async (email: string, password: string) => {
+  const handleLoginAgency = async (email: string) => {
     // Aquí puedes agregar la lógica de autenticación con tu backend
     console.log('Login de Agencia:', email)
     setIsAuthenticated(true)
