@@ -1,5 +1,4 @@
-import React, { useState, CSSProperties } from 'react'
-import { Menu, User, LogOut } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
 import '../styles/guiasai-theme.css'
 
 interface NavigationBarProps {
@@ -11,6 +10,8 @@ interface NavigationBarProps {
   onLogout: () => void
   onLoginClick?: () => void
   isAuthenticated?: boolean
+  quotationCount?: number
+  onQuotationClick?: () => void
 }
 
 export const NavigationBar: React.FC<NavigationBarProps> = ({
@@ -22,260 +23,87 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
   onLogout,
   onLoginClick,
   isAuthenticated = false,
+  quotationCount = 0,
+  onQuotationClick
 }) => {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isScrolled, setIsScrolled] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50)
+    }
+
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   return (
-    <nav style={styles.navbar}>
-      <div style={styles.container}>
-        {/* Logo */}
-        <div style={styles.logo}>
-          <img src="https://guiasanandresislas.com/wp-content/uploads/2025/02/Logo-GuiaSAI-avisoa.png" alt="GuiaSAI" style={styles.logoImg} />
+    <header className={`premium-header ${isScrolled ? 'scrolled' : ''}`}>
+      <div className="header-container">
+        <div className="brand-section">
+          <a href="#" className="logo-premium">
+            <div className="logo-icon">
+              <img src="/LOGO GUIASAI.png" alt="GuiaSAI Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
+            </div>
+            <div className="logo-text">
+              <span className="logo-title">GuiaSAI</span>
+              <span className="logo-subtitle">Business Hub</span>
+            </div>
+          </a>
         </div>
-
-        {/* Desktop Menu */}
-        <div style={styles.menuDesktop}>
-          <button
-            onClick={() => onTabChange('accommodations')}
-            style={{
-              ...styles.navLink,
-              ...(activeTab === 'accommodations' ? styles.navLinkActive : {}),
-            } as CSSProperties}
+        
+        <nav className="nav-premium">
+          <a 
+            href="#alojamientos" 
+            className={`nav-link-premium ${activeTab === 'accommodations' ? 'active' : ''}`}
+            onClick={(e) => {
+              e.preventDefault()
+              onTabChange('accommodations')
+            }}
           >
-            🏨 Alojamientos
-          </button>
-          <button
-            onClick={() => onTabChange('tours')}
-            style={{
-              ...styles.navLink,
-              ...(activeTab === 'tours' ? styles.navLinkActive : {}),
-            } as CSSProperties}
+            <span>🏨 Alojamientos</span>
+          </a>
+          <a 
+            href="#tours" 
+            className={`nav-link-premium ${activeTab === 'tours' ? 'active' : ''}`}
+            onClick={(e) => {
+              e.preventDefault()
+              onTabChange('tours')
+            }}
           >
-            🎫 Tours
-          </button>
-          <button
-            onClick={() => onTabChange('transports')}
-            style={{
-              ...styles.navLink,
-              ...(activeTab === 'transports' ? styles.navLinkActive : {}),
-            } as CSSProperties}
+            <span>🚤 Tours</span>
+          </a>
+          <a 
+            href="#transportes" 
+            className={`nav-link-premium ${activeTab === 'transports' ? 'active' : ''}`}
+            onClick={(e) => {
+              e.preventDefault()
+              onTabChange('transports')
+            }}
           >
-            🚕 Traslados
-          </button>
-        </div>
-
-        {/* User Profile */}
-        <div style={styles.userSection}>
+            <span>✈️ Transportes</span>
+          </a>
+        </nav>
+        
+        <div className="header-actions">
+          {quotationCount > 0 && (
+            <div className="quote-indicator" onClick={onQuotationClick}>
+              <span>Mi Cotización</span>
+              <div className="quote-badge">{quotationCount}</div>
+            </div>
+          )}
+          
           {isAuthenticated ? (
-            <>
-              <button style={styles.profileButton} onClick={onProfileClick}>
-                <div style={styles.profileAvatar}>{userInitials}</div>
-                <div style={styles.profileInfo}>
-                  <small style={styles.profileLabel}>Bienvenido</small>
-                  <span style={styles.profileName}>{userName}</span>
-                </div>
-                <User size={18} />
-              </button>
-
-              <button
-                style={styles.logoutButton}
-                onClick={onLogout}
-                title="Cerrar sesión"
-              >
-                <LogOut size={18} />
-              </button>
-            </>
+            <div className="user-avatar" onClick={onProfileClick}>
+              {userInitials}
+            </div>
           ) : (
-            <button
-              style={styles.loginButton}
-              onClick={onLoginClick}
-            >
-              Iniciar Sesión
+            <button className="user-avatar" onClick={onLoginClick}>
+              {userInitials}
             </button>
           )}
         </div>
-
-        {/* Mobile Menu Toggle */}
-        <button
-          style={styles.mobileMenuToggle}
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        >
-          <Menu size={24} />
-        </button>
       </div>
-
-      {/* Mobile Menu */}
-      {mobileMenuOpen && (
-        <div style={styles.mobileMenu}>
-          <button
-            onClick={() => {
-              onTabChange('accommodations')
-              setMobileMenuOpen(false)
-            }}
-            style={styles.mobileMenuItem}
-          >
-            🏨 Alojamientos
-          </button>
-          <button
-            onClick={() => {
-              onTabChange('tours')
-              setMobileMenuOpen(false)
-            }}
-            style={styles.mobileMenuItem}
-          >
-            🎫 Tours
-          </button>
-          <button
-            onClick={() => {
-              onTabChange('transports')
-              setMobileMenuOpen(false)
-            }}
-            style={styles.mobileMenuItem}
-          >
-            🚕 Traslados
-          </button>
-        </div>
-      )}
-    </nav>
+    </header>
   )
 }
-
-const styles: { [key: string]: CSSProperties } = {
-  navbar: {
-    backgroundColor: 'var(--guiasai-bg-white)',
-    boxShadow: 'var(--shadow-md)',
-    position: 'sticky',
-    top: 0,
-    zIndex: 1000,
-  },
-  container: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: 'var(--spacing-md)',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  logo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--spacing-sm)',
-    cursor: 'pointer',
-  },
-  logoImg: {
-    height: '40px',
-    width: 'auto',
-  },
-  menuDesktop: {
-    display: 'flex',
-    gap: 'var(--spacing-lg)',
-    alignItems: 'center',
-  },
-  navLink: {
-    backgroundColor: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '1rem',
-    fontFamily: "'Poppins', sans-serif",
-    fontWeight: 600,
-    color: 'var(--guiasai-text-dark)',
-    padding: 'var(--spacing-sm) var(--spacing-md)',
-    borderRadius: '6px',
-    transition: 'all 0.2s ease',
-  },
-  navLinkActive: {
-    color: 'var(--guiasai-primary)',
-    backgroundColor: 'rgba(255, 102, 0, 0.1)',
-    borderBottom: '3px solid var(--guiasai-primary)',
-  },
-  userSection: {
-    display: 'flex',
-    gap: 'var(--spacing-md)',
-    alignItems: 'center',
-  },
-  profileButton: {
-    backgroundColor: 'transparent',
-    border: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--spacing-sm)',
-    cursor: 'pointer',
-    padding: 'var(--spacing-sm)',
-    borderRadius: '6px',
-    transition: 'background-color 0.2s ease',
-  },
-  profileAvatar: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '50%',
-    backgroundColor: 'var(--guiasai-primary)',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontFamily: "'Poppins', sans-serif",
-    fontWeight: 700,
-    fontSize: '0.9rem',
-  },
-  profileInfo: {
-    textAlign: 'left',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  profileLabel: {
-    color: 'var(--guiasai-text-light)',
-    fontSize: '0.75rem',
-  },
-  profileName: {
-    fontFamily: "'Poppins', sans-serif",
-    fontWeight: 600,
-    color: 'var(--guiasai-text-dark)',
-    fontSize: '0.9rem',
-  },
-  logoutButton: {
-    backgroundColor: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    color: 'var(--guiasai-text-dark)',
-    padding: 'var(--spacing-sm)',
-    borderRadius: '6px',
-    transition: 'all 0.2s ease',
-  },
-  mobileMenuToggle: {
-    display: 'none',
-    backgroundColor: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    color: 'var(--guiasai-primary)',
-  },
-  mobileMenu: {
-    display: 'none',
-    flexDirection: 'column',
-    backgroundColor: 'var(--guiasai-bg-light)',
-    padding: 'var(--spacing-md)',
-    borderTop: '1px solid var(--guiasai-border)',
-  },
-  mobileMenuItem: {
-    backgroundColor: 'transparent',
-    border: 'none',
-    borderBottom: '1px solid var(--guiasai-border)',
-    cursor: 'pointer',
-    padding: 'var(--spacing-md)',
-    textAlign: 'left',
-    color: 'var(--guiasai-text-dark)',
-    fontWeight: 600,
-  },
-  loginButton: {
-    backgroundColor: 'var(--guiasai-primary)',
-    border: 'none',
-    cursor: 'pointer',
-    color: 'white',
-    padding: 'var(--spacing-sm) var(--spacing-lg)',
-    borderRadius: '6px',
-    fontFamily: "'Poppins', sans-serif",
-    fontWeight: 600,
-    fontSize: '0.95rem',
-    transition: 'all 0.2s ease',
-  },
-}
-

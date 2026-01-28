@@ -5,14 +5,14 @@
 
 import axios from 'axios'
 
-const AIRTABLE_API_KEY = import.meta.env.VITE_AIRTABLE_API_KEY || ''
-const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || ''
+const AIRTABLE_API_KEY = (import.meta.env as Record<string, any>).VITE_AIRTABLE_API_KEY || ''
+const AIRTABLE_BASE_ID = (import.meta.env as Record<string, any>).VITE_AIRTABLE_BASE_ID || ''
 const AIRTABLE_API_URL = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}`
 
 const TABLES = {
   SERVICIOS: 'ServiciosTuristicos_SAI',
   COTIZACIONES: 'CotizacionesGG',
-  COTIZACIONES_ITEMS: 'cotizaciones_Items',
+  COTIZACIONES_ITEMS: 'Cotizaciones_Items', // 🔧 Nombre exacto de la tabla
 }
 
 const getHeaders = () => ({
@@ -32,17 +32,46 @@ function normalizeToArray(value: any): string[] {
 // =========================================================
 
 /**
- * Parsea el campo Dias_Operacion para extraer horarios
- * Formato esperado: "Lun-Vie: 09:00, 14:00 | Sab: 10:00"
- * Retorna array de horarios únicos: ["09:00", "14:00", "10:00"]
+ * Parsea el campo Dias_Operacion o Horarios de Operacion para extraer horarios
+ * Soporta múltiples formatos:
+ * - "Lun-Vie: 09:00, 14:00 | Sab: 10:00"
+ * - "09:00, 14:00, 18:00"
+ * - "6:00 PM - 8:00 PM" (formato 12h)
+ * Retorna array de horarios únicos: ["09:00", "14:00", "18:00"]
  */
 function parseHorarios(diasOperacion: string): string[] {
-  if (!diasOperacion) return []
+  if (!diasOperacion || typeof diasOperacion !== 'string') return []
   
   try {
-    // Buscar todos los patrones de hora HH:MM
+    // Buscar todos los patrones de hora HH:MM (24h)
     const horariosMatch = diasOperacion.match(/\d{1,2}:\d{2}/g)
-    if (!horariosMatch) return []
+    
+    if (!horariosMatch || horariosMatch.length === 0) {
+      // Intentar formato 12h (XX:XX AM/PM)
+      const horariosMatch12 = diasOperacion.match(/\d{1,2}:\d{2}\s*(AM|PM|am|pm)/gi)
+      if (horariosMatch12) {
+        const convertidos = horariosMatch12.map(h => {
+          const parts = h.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)/i)
+          if (parts) {
+            let hours = parseInt(parts[1])
+            const mins = parts[2]
+            const meridiem = parts[3].toUpperCase()
+            
+            if (meridiem === 'PM' && hours !== 12) hours += 12
+            if (meridiem === 'AM' && hours === 12) hours = 0
+            
+            return `${String(hours).padStart(2, '0')}:${mins}`
+          }
+          return null
+        }).filter(Boolean) as string[]
+        
+        if (convertidos.length > 0) {
+          const unicos = [...new Set(convertidos)]
+          return unicos.sort()
+        }
+      }
+      return []
+    }
     
     // Eliminar duplicados y ordenar
     const horariosUnicos = [...new Set(horariosMatch)]
@@ -139,6 +168,11 @@ export async function createCotizacionGG(payload: {
   bebes?: number
   precioTotal: number
   notasInternas?: string
+  // 🆕 Nuevos campos para el resumen
+  cotizacionItems?: string  // Resumen de tours/alojamientos seleccionados
+  accommodations?: any[]    // Items de alojamientos
+  tours?: any[]            // Items de tours
+  transports?: any[]       // Items de transportes
 }) {
   if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID) {
     throw new Error('Airtable no está configurado (VITE_AIRTABLE_API_KEY / VITE_AIRTABLE_BASE_ID)')
@@ -147,6 +181,10 @@ export async function createCotizacionGG(payload: {
   try {
     const url = `${AIRTABLE_API_URL}/${encodeURIComponent(TABLES.COTIZACIONES)}`
     const fields: Record<string, any> = {}
+
+    // 🆕 Generar ID único de cotización en el formato requerido
+    const timestamp = Date.now()
+    const cotizacionId = `Cotización QT-${timestamp}`
 
     // Campos obligatorios
     if (payload.nombre) fields.Nombre = payload.nombre
@@ -160,22 +198,116 @@ export async function createCotizacionGG(payload: {
     if (payload.adultos !== undefined && payload.adultos > 0) fields['Adultos 18 - 99 años'] = payload.adultos
     if (payload.ninos !== undefined && payload.ninos > 0) fields['Niños 4 - 17 años'] = payload.ninos
     if (payload.bebes !== undefined && payload.bebes > 0) fields['Bebes 0 - 3 años'] = payload.bebes
-    if (payload.notasInternas) fields['Notas internas'] = payload.notasInternas
+
+    // 🆕 Generar resumen detallado de los items seleccionados
+    let resumenCompleto = ''
+    if (payload.accommodations || payload.tours || payload.transports) {
+      const resumen = generateCotizacionSummary({
+        accommodations: payload.accommodations || [],
+        tours: payload.tours || [],
+        transports: payload.transports || []
+      })
+      resumenCompleto = resumen
+      fields['Cotizaciones_Items'] = resumen  // 🆕 Campo para el resumen de items
+    }
+
+    // 🆕 Incluir ID de cotización en las notas internas
+    const notasConId = `${cotizacionId}
+
+${payload.notasInternas || 'Generada desde portal de agencias (B2B)'}
+
+RESUMEN DE SERVICIOS:
+${resumenCompleto}`
+
+    fields['Notas internas'] = notasConId
 
     console.log('📤 Enviando cotización a Airtable CotizacionesGG con campos:', JSON.stringify(fields, null, 2))
     const response = await axios.post(url, { fields }, { headers: getHeaders() })
-    console.log('✅ Cotización creada con ID:', response.data?.id)
-    return response.data?.id as string
+    console.log('✅ Cotización creada con ID:', response.data?.id, '| Cotización:', cotizacionId)
+    
+    // Retornar tanto el ID de Airtable como el ID de la cotización
+    return {
+      airtableId: response.data?.id as string,
+      cotizacionId: cotizacionId
+    }
   } catch (error: any) {
     console.error('❌ Error detallado en createCotizacionGG:', {
       status: error?.response?.status,
       statusText: error?.response?.statusText,
       data: JSON.stringify(error?.response?.data),
       message: error?.message,
-      // Nota: los campos ya fueron construidos arriba
     })
     throw error
   }
+}
+
+// 🆕 Función para generar el resumen detallado de la cotización
+function generateCotizacionSummary(data: {
+  accommodations: any[]
+  tours: any[]
+  transports: any[]
+}): string {
+  let resumen = []
+
+  // 🏨 ALOJAMIENTOS
+  if (data.accommodations && data.accommodations.length > 0) {
+    resumen.push("🏨 ALOJAMIENTOS:")
+    data.accommodations.forEach((acc, index) => {
+      const checkIn = acc.checkIn instanceof Date ? acc.checkIn.toLocaleDateString('es-CO') : new Date(acc.checkIn).toLocaleDateString('es-CO')
+      const checkOut = acc.checkOut instanceof Date ? acc.checkOut.toLocaleDateString('es-CO') : new Date(acc.checkOut).toLocaleDateString('es-CO')
+      
+      resumen.push(`${index + 1}. ${acc.hotelName}`)
+      resumen.push(`   • Fechas: ${checkIn} al ${checkOut}`)
+      resumen.push(`   • Noches: ${acc.nights}`)
+      resumen.push(`   • Habitaciones: ${acc.quantity}`)
+      resumen.push(`   • Huéspedes: ${acc.adults} adultos${acc.children ? `, ${acc.children} niños` : ''}`)
+      resumen.push(`   • Tipo: ${acc.roomType}`)
+      resumen.push(`   • Precio: $${acc.total.toLocaleString('es-CO')} COP`)
+      resumen.push('')
+    })
+  }
+
+  // 🎫 TOURS
+  if (data.tours && data.tours.length > 0) {
+    resumen.push("🎫 TOURS:")
+    data.tours.forEach((tour, index) => {
+      const fecha = tour.date instanceof Date ? tour.date.toLocaleDateString('es-CO') : new Date(tour.date).toLocaleDateString('es-CO')
+      
+      resumen.push(`${index + 1}. ${tour.tourName}`)
+      resumen.push(`   • Fecha: ${fecha}`)
+      if (tour.schedule) {
+        resumen.push(`   • Horario: ${tour.schedule}`)
+      }
+      resumen.push(`   • Duración: ${tour.duration}`)
+      resumen.push(`   • Participantes: ${tour.quantity} personas`)
+      if (tour.included && tour.included.length > 0) {
+        resumen.push(`   • Incluye: ${tour.included.slice(0, 3).join(', ')}${tour.included.length > 3 ? '...' : ''}`)
+      }
+      resumen.push(`   • Precio: $${tour.total.toLocaleString('es-CO')} COP`)
+      resumen.push('')
+    })
+  }
+
+  // 🚕 TRANSPORTES
+  if (data.transports && data.transports.length > 0) {
+    resumen.push("🚕 TRANSPORTES:")
+    data.transports.forEach((transport, index) => {
+      const fecha = transport.date instanceof Date ? transport.date.toLocaleDateString('es-CO') : new Date(transport.date).toLocaleDateString('es-CO')
+      
+      resumen.push(`${index + 1}. ${transport.vehicleType}`)
+      resumen.push(`   • Ruta: ${transport.origin} → ${transport.destination}`)
+      resumen.push(`   • Fecha: ${fecha}`)
+      if (transport.time) {
+        resumen.push(`   • Hora: ${transport.time}`)
+      }
+      resumen.push(`   • Vehículos: ${transport.quantity}`)
+      resumen.push(`   • Pasajeros: ${transport.totalPassengers}`)
+      resumen.push(`   • Precio: $${transport.total.toLocaleString('es-CO')} COP`)
+      resumen.push('')
+    })
+  }
+
+  return resumen.join('\n')
 }
 
 export async function createCotizacionItemGG(payload: {
@@ -197,28 +329,43 @@ export async function createCotizacionItemGG(payload: {
   const fields: Record<string, any> = {}
 
   try {
-    // Vínculos requeridos (usar nombres consistentes con el esquema)
-    // Tabla de items debe vincular a: CotizacionesGG y ServiciosTuristicos_SAI
-    if (payload.cotizacionId) {
-      fields['CotizacionesGG'] = [payload.cotizacionId]
+    // 🆕 Por ahora omitimos los campos de vínculo hasta conocer la estructura exacta
+    // Incluimos la información como referencia en las notas
+    let notasItem = `Cotización ID: ${payload.cotizacionId}\nServicio ID: ${payload.servicioId}`
+
+    // Fechas - solo si existen
+    if (payload.fechaInicio) {
+      fields['Fecha Inicio'] = payload.fechaInicio
     }
-    // Solo enviamos vínculo de servicio si parece un ID de Airtable (empieza por 'rec')
-    if (payload.servicioId && payload.servicioId.startsWith('rec')) {
-      fields['ServiciosTuristicos_SAI'] = [payload.servicioId]
+    if (payload.fechaFin) {
+      fields['Fecha Fin'] = payload.fechaFin
     }
 
-    // Fechas
-    if (payload.fechaInicio) fields['Fecha Inicio'] = payload.fechaInicio
-    if (payload.fechaFin) fields['Fecha Fin'] = payload.fechaFin
+    // Precios - incluir aunque sean 0
+    if (payload.precioUnitario !== undefined) {
+      fields['Precio Unitario'] = payload.precioUnitario
+    }
+    if (payload.subtotal !== undefined) {
+      fields['Precio Subtotal'] = payload.subtotal
+    }
 
-    // Precios
-    if (payload.precioUnitario !== undefined) fields['Precio Unitario'] = payload.precioUnitario
-    if (payload.subtotal !== undefined) fields['Precio Subtotal'] = payload.subtotal
+    // Pasajeros - incluir solo si > 0
+    if (payload.adultos !== undefined && payload.adultos > 0) {
+      fields['Adultos 18 - 99 años'] = payload.adultos
+    }
+    if (payload.ninos !== undefined && payload.ninos > 0) {
+      fields['Niños 4 - 17 años'] = payload.ninos
+    }
+    if (payload.bebes !== undefined && payload.bebes > 0) {
+      fields['Bebes 0 - 3 años'] = payload.bebes
+    }
 
-    // Pasajeros
-    if (payload.adultos !== undefined && payload.adultos > 0) fields['Adultos 18 - 99 años'] = payload.adultos
-    if (payload.ninos !== undefined && payload.ninos > 0) fields['Niños 4 - 17 años'] = payload.ninos
-    if (payload.bebes !== undefined && payload.bebes > 0) fields['Bebes 0 - 3 años'] = payload.bebes
+    // 🆕 Agregar notas con los IDs de referencia
+    if (fields['Notas internas']) {
+      fields['Notas internas'] = fields['Notas internas'] + '\n\n' + notasItem
+    } else {
+      fields['Notas internas'] = notasItem
+    }
 
     console.log('📤 Enviando item a Airtable cotizaciones_Items con campos:', JSON.stringify(fields, null, 2))
     console.log('📋 Payload original:', JSON.stringify(payload, null, 2))
@@ -231,10 +378,29 @@ export async function createCotizacionItemGG(payload: {
       status: error?.response?.status,
       statusText: error?.response?.statusText,
       airtableError,
+      errorMessage: airtableError?.message,
+      invalidFields: airtableError?.invalidFields,
       fields,
       payload
     })
-    console.error('🔍 Airtable full response:', error?.response?.data)
+    console.error('🔍 Airtable full response:', JSON.stringify(error?.response?.data, null, 2))
+    
+    // 🆕 Intentar crear el item sin los campos de vínculo si fallan
+    if (airtableError?.message?.includes('Value is not an array of record IDs')) {
+      console.warn('⚠️ Reintentando sin campos de vínculo...')
+      try {
+        const fieldsWithoutLinks = { ...fields }
+        delete fieldsWithoutLinks['CotizacionesGG']
+        delete fieldsWithoutLinks['ServiciosTuristicos_SAI']
+        
+        const fallbackResponse = await axios.post(url, { fields: fieldsWithoutLinks }, { headers: getHeaders() })
+        console.log('✅ Item creado sin vínculos con ID:', fallbackResponse.data?.id)
+        return fallbackResponse.data?.id as string
+      } catch (fallbackError) {
+        console.error('❌ También falló el fallback:', fallbackError)
+      }
+    }
+    
     throw error
   }
 }
@@ -330,6 +496,15 @@ export async function getTours() {
     })
 
     const mappedTours = response.data.records.map((record: any) => {
+      // 🆕 Extraer horarios del campo Horarios de Operacion (nombre exacto en Airtable)
+      const horariosCampo = record.fields['Horarios de Operacion'] || 
+                            record.fields['Horarios_Operacion'] ||
+                            record.fields.HorariosOperacion ||
+                            record.fields['Dias_Operacion'] || 
+                            record.fields.DiasOperacion || ''
+      
+      const horariosExtraidos = parseHorarios(horariosCampo)
+      
       const tour = {
         id: record.id,
         nombre: record.fields.Servicio || record.fields.Nombre || 'Sin nombre',
@@ -350,11 +525,11 @@ export async function getTours() {
           typeof img === 'string' ? img : img?.url || ''
         ).filter((url: string) => url), // 🆕 Array completo de imágenes
         
-        // 🆕 Horarios de operación desde Dias_Operacion y Horarios de Operacion
-        diasOperacion: record.fields['Dias_Operacion'] || record.fields.DiasOperacion || record.fields['Horarios de Operacion'] || '',
-        horarios: parseHorarios(record.fields['Dias_Operacion'] || record.fields['Horarios de Operacion'] || ''),
-        horariosDisponibles: parseHorarios(record.fields['Dias_Operacion'] || record.fields['Horarios de Operacion'] || ''),
-        horariosOperacion: record.fields['Horarios de Operacion'] || '', // 🆕 Campo adicional para info completa
+        // 🆕 Horarios de operación desde Airtable
+        diasOperacion: horariosCampo,
+        horarios: horariosExtraidos, // 🔧 IMPORTANTE: Array de horarios disponibles
+        horariosDisponibles: horariosExtraidos,
+        horariosOperacion: horariosCampo,
         
         horarioInicio: record.fields.HorarioInicio || record.fields['Horario Inicio'] || '08:00',
         horarioFin: record.fields.HorarioFin || record.fields['Horario Fin'] || '16:00',
@@ -362,7 +537,14 @@ export async function getTours() {
         noIncluye: normalizeToArray(record.fields.NoIncluye),
         dificultad: record.fields.Dificultad || 'Fácil',
       }
-      console.log(`📍 Tour cargado: ${tour.nombre} | Precio: $${tour.precioPerPerson}`)
+      
+      // 🔍 DEBUG: Mostrar si el tour tiene horarios
+      if (horariosExtraidos.length > 0) {
+        console.log(`📍 Tour: ${tour.nombre} | Horarios: ${horariosExtraidos.join(', ')} | Campo: ${horariosCampo}`)
+      } else {
+        console.warn(`⚠️ Tour sin horarios: ${tour.nombre} | Campo Horarios: "${horariosCampo}"`)
+      }
+      
       return tour
     })
     

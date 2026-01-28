@@ -146,10 +146,31 @@ export const ItineraryView: React.FC<ItineraryViewProps> = ({
       tours.forEach((tour) => {
         const tourDate = normalizeDateToString(tour.date)
         if (tourDate === dateStr) {
+          // Usar el horario seleccionado, o extraer del dia de operacion, o usar horario de inicio
+          let horarioTour = tour.schedule || ''
+          
+          // Si no hay horario seleccionado, intentar extraer del diasOperacion
+          if (!horarioTour && tour.diasOperacion) {
+            const match = tour.diasOperacion.match(/\d{1,2}:\d{2}/)
+            if (match) {
+              horarioTour = match[0]
+            }
+          }
+          
+          // Si aún no hay horario, usar horarioInicio
+          if (!horarioTour && tour.horarioInicio) {
+            horarioTour = tour.horarioInicio
+          }
+          
+          // Fallback a 09:00
+          if (!horarioTour) {
+            horarioTour = '09:00'
+          }
+          
           dayItems.push({
             id: tour.id,
             type: 'tour',
-            time: tour.schedule || '09:00',
+            time: horarioTour,
             title: `🎫 ${tour.tourName}`,
             description: tour.description,
             duration: tour.duration,
