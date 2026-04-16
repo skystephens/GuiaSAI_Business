@@ -51,9 +51,21 @@ function formatCOP(n: number) {
   return n.toLocaleString('es-CO') + ' COP'
 }
 
+/** YYYY-MM-DD → "5 nov 2026". Devuelve '' si la fecha no es válida. */
+function formatFechaCorta(iso: string) {
+  if (!iso) return ''
+  const d = new Date(iso + 'T12:00:00')
+  if (isNaN(d.getTime())) return ''
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
+  return `${d.getDate()} ${meses[d.getMonth()]} ${d.getFullYear()}`
+}
+
 function nightsBetween(a: string, b: string) {
   if (!a || !b) return 1
-  const diff = new Date(b).getTime() - new Date(a).getTime()
+  const da = new Date(a + 'T12:00:00')
+  const db = new Date(b + 'T12:00:00')
+  if (isNaN(da.getTime()) || isNaN(db.getTime())) return 1
+  const diff = db.getTime() - da.getTime()
   return Math.max(1, Math.round(diff / 86400000))
 }
 
@@ -159,9 +171,9 @@ function CotizacionPreview({ cliente, fechaInicio, fechaFin, adultos, ninos, beb
 
         {/* Fechas + Pax */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '0.6rem', marginBottom: '1.25rem' }}>
-          {fechaInicio && <DataCard label="Llegada" value={fechaInicio} />}
-          {fechaFin && <DataCard label="Salida" value={fechaFin} />}
-          <DataCard label="Pax" value={`${paxTotal} pers.`} />
+          {fechaInicio && <DataCard label="Llegada" value={formatFechaCorta(fechaInicio) || fechaInicio} />}
+          {fechaFin && <DataCard label="Salida" value={formatFechaCorta(fechaFin) || fechaFin} />}
+          <DataCard label="Pax" value={paxTotal > 0 ? `${paxTotal} persona${paxTotal !== 1 ? 's' : ''}` : '—'} />
         </div>
 
         {/* Items */}
@@ -223,12 +235,16 @@ function CotizacionPreview({ cliente, fechaInicio, fechaFin, adultos, ninos, beb
                         padding: '0.1rem 0.45rem', borderRadius: '99px', textTransform: 'uppercase',
                         background: `${tipoColor}20`, color: tipoColor,
                       }}>{item.tipo}</span>
-                      {item.fecha && <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>{item.fecha}</span>}
+                      {formatFechaCorta(item.fecha || '') && (
+                        <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>
+                          {formatFechaCorta(item.fecha || '')}
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1e293b', lineHeight: 1.3 }}>{item.nombre}</div>
                     {item.ubicacion && <div style={{ fontSize: '0.68rem', color: '#64748b' }}>📍 {item.ubicacion}</div>}
                     <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.15rem' }}>
-                      {formatCOP(item.precio)} × {item.cantidad} {item.tipo === 'Alojamiento' ? 'noche(s)' : 'pax'}
+                      {formatCOP(item.precio)} × {Math.max(1, item.cantidad || 1)} {item.tipo === 'Alojamiento' ? 'noche(s)' : 'pax'}
                     </div>
                     {item.notas && <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.2rem' }}>{item.notas}</div>}
                   </div>
